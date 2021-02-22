@@ -7,7 +7,9 @@ from http.client import IncompleteRead, InvalidURL
 from os import path
 from queue import Empty, Queue
 from socket import timeout as SocketTimeoutError
+from typing import Tuple
 from urllib import error, parse, request
+from urllib.parse import urlparse, urlencode, ParseResult, quote
 
 
 class Config:
@@ -74,8 +76,20 @@ def extract_domain(link):
     return domain
 
 
+def sanitize(link: str) -> str:
+    """sanitize URL like Firefox: strip whitespace at both ends, url-encode them in path."""
+    num_spaces: int = link.count(' ')
+    if num_spaces > 0:
+        t: ParseResult = urlparse(link.strip(' '))
+        sane = ParseResult(t.scheme, t.netloc, quote(t.path), t.params, t.query, t.fragment)
+        print(f"WARNING: '{link}' > '{sane.geturl()}'")
+        return sane.geturl()
+    else:
+        return link
+
+
 class Checker:
-    TO_PROCESS = Queue()
+    TO_PROCESS: Queue = Queue()
 
     def __init__(self, url, config):
         self.config = config
@@ -134,9 +148,9 @@ class Checker:
 
             content_type = http_response.headers.get("Content-Type")
             if (
-                content_type is not None
-                and "text/html" in content_type
-                or "text/plain" in content_type
+                    content_type is not None
+                    and "text/html" in content_type
+                    or "text/plain" in content_type
             ):
                 valid_content_type = True
             else:
@@ -149,16 +163,16 @@ class Checker:
             self.add_entry(code, reason, page)
             return
         except (
-            error.URLError,
-            ConnectionRefusedError,
-            ConnectionResetError,
-            IncompleteRead,
-            InvalidURL,
-            NotImplementedError,
-            SocketTimeoutError,
-            TimeoutError,
-            TypeError,
-            UnicodeError,
+                error.URLError,
+                ConnectionRefusedError,
+                ConnectionResetError,
+                IncompleteRead,
+                InvalidURL,
+                NotImplementedError,
+                SocketTimeoutError,
+                TimeoutError,
+                TypeError,
+                UnicodeError,
         ) as e:
             code = 0
             reason = e
@@ -183,7 +197,7 @@ class Checker:
             parent = page["url"]
             parser = Parser(self.config)
             links = parser.feed_me(page["data"])
-            new_links = [x for x in links if x not in self.visited]
+            new_links = [sanitize(x) for x in links if sanitize(x) not in self.visited]
             full_links = [parse.urljoin(parent, l) for l in new_links]
             for l in full_links:
                 if l not in self.visited:
@@ -211,7 +225,7 @@ class Checker:
             try:
                 target_url = self.TO_PROCESS.get(block=True, timeout=4)
                 if target_url["url"].startswith("mailto:"):
-                    email = target_url["url"][len("mailto:") :]
+                    email = target_url["url"][len("mailto:"):]
                     self.mailto_links.append(email)
 
                 elif target_url["url"] not in self.visited:
